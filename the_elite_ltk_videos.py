@@ -1,6 +1,8 @@
 # 1997 DONE
 # 1998 DONE
 # 1999 DONE
+# 2000 DONE
+# 
 import httplib2
 from bs4 import BeautifulSoup
 import time
@@ -72,12 +74,6 @@ class Video:
 					self.make_game()
 					self.make_filename()
 					self.make_folder()
-					print("Rankings Url: " + self.rankings_url)
-					print("Stage: " + self.stage)
-					print("Player: " + self.player)
-					print("Filename: " + self.filename)
-					print("Date: " + self.date_achieved)
-					print("BASE DIR: " + self.BASE_DIR)
 					self.download_video()
 					self.upload_obj()
 					# self.update_database()
@@ -271,7 +267,6 @@ class Video:
 
 	def key_exists(self):
 		# Check if the file exists in DO Spaces
-		print("FILENAME: " + self.filename)
 		try:
 			key = f"{self.player}/{self.filename}"
 			config.s3_client.head_object(Bucket=config.DO_SPACES_BUCKET, Key=key)
@@ -382,7 +377,7 @@ def main():
 		for MONTH in range(1, 13):
 			Video(int(sys.argv[1]), MONTH)
 			print("Month: " + str(MONTH))
-
+	print(str(sys.argc) + " Complete")
 
 if __name__ == "__main__":
 	main()

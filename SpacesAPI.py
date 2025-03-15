@@ -222,11 +222,24 @@ def find_duplicates():
     print("Total duplicate items (all instances):", duplicates_count)
 
 
+def make_all_files_public():
+    keys = go_through_all_objects()
+    for key in keys:
+        try:
+            # Set the object ACL to public-read
+            response = s3_client.put_object_acl(
+                Bucket=DO_SPACES_BUCKET,
+                Key=key,
+                ACL='public-read'
+            )
+            print(f"File {key} is now public.")
+        except ClientError as e:
+            print(f"Error making file {key} public: {e}")
 
 
 def main():
+    # make_all_files_public()
     find_duplicates()
-
 
 # Example call to main()
 if __name__ == "__main__":
