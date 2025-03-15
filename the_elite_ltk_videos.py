@@ -2,7 +2,10 @@
 # 1998 DONE
 # 1999 DONE
 # 2000 DONE
-# 
+# 2001 DONE
+# 2002 DONE
+# 2003 DONE
+# 2004 DONE
 import httplib2
 from bs4 import BeautifulSoup
 import time
@@ -38,7 +41,7 @@ class Video:
 		self.date_achieved = None
 		self.dead_url = None
 		self.extension = None
-		self.file_exists = None
+		self.file_exists = 0
 		self.BASE_DIR = BASE_DIR
 		self.get_rankings_url(YEAR, MONTH)
 
@@ -118,7 +121,6 @@ class Video:
 					video_id = base_url.split('/')[-1]
 					# Construct the standard YouTube URL.
 					youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-					print("YouTube video URL:", youtube_url)
 					self.youtube_url = youtube_url
 					return True
 			
@@ -149,14 +151,12 @@ class Video:
 		date = date.strftime("%Y-%m-%d")
 
 		self.date_achieved = date
-		print(self.date_achieved)
 
 	def get_name(self, index_info):
 		by = index_info.index("by")
 		name = index_info[by + 3:]
 		name = name.replace(" ", "_")
 		self.player = name
-		print(self.player)
 
 	def get_difficulty(self, index_info):
 		index_info = index_info.lower()
@@ -167,13 +167,9 @@ class Video:
 		elif "ltk" in index_info:
 			self.difficulty = "LTK"
 
-		print(self.difficulty)
-		print(self.rankings_url)
 		self.get_stage(index_info)
 
 	def get_stage(self, index_info):
-		print("index_info: " + index_info)
-
 		if self.difficulty == "DLTK":
 			get_stage = index_info[0:index_info.index("dark ltk")-1]
 			get_stage = get_stage.lower()
@@ -182,8 +178,6 @@ class Video:
 			get_stage = index_info[0:index_info.index("ltk")-1]
 			get_stage = get_stage.lower()
 			self.stage = get_stage
-
-		print("Stage: " + self.stage)
 
 	def get_time_in_seconds(self, index_info):
 
@@ -253,7 +247,6 @@ class Video:
 			os.mkdir("the-elite-videos/" + self.player)
 			print("Directory ", self.player, " created")
 		except BaseException:
-			print("Couldn't make folder")
 			pass
 
 	def check_if_dupe(self, rank_id):
@@ -277,24 +270,29 @@ class Video:
 			if error_code != '404':
 				print(f"Error checking if file exists in DO Spaces: {e}")
 				return False
+			else:
+				print(f"File '{self.filename}' does not exist in DO Spaces (404). Proceeding with download.")
+				return False
 			# If error_code is '404', file does not exist; continue with download
 		return False
+
 
 	def download_video(self):
 		print("")
 		print("Rankings Url: " + self.rankings_url)
+		print("Youtube_URL: " + self.youtube_url)
 		print("Stage: " + self.stage)
 		print("Player: " + self.player)
 		print("Filename: " + self.filename)
 		print("Date: " + self.date_achieved)
-		print("BASE DIR: " + self.BASE_DIR)
 		os.chdir(self.BASE_DIR + "/the-elite-videos/" + self.player)
 
 		try:
 			ydl_opts = {
 				'outtmpl': self.filename + '.' + '%(ext)s',
 				'noplaylist': True,
-				'format': 'bestvideo+bestaudio/best'
+				'format': 'bestvideo+bestaudio/best',
+				'quiet': True
 			}
 
 			with youtube_dl.YoutubeDL(ydl_opts) as ydl:
@@ -303,20 +301,23 @@ class Video:
 				self.extension = info_dict.get('ext')
 				self.filename = self.filename + "." + self.extension
 
-				if self.key_exists():
-					self.file_exists = 1
-					return
+			# DONT REMOVE THE ELSE STATEMENT. THE CODE WILL MAKE FILE_EXISTS = 1 AUTOMATICALLY. I DON'T KNOW WHY THIS HAPPENS.
+			if self.key_exists():
+				self.file_exists = 1
+				return
+			else:
+				self.file_exists = 0
 
-				print("Downloaded file extension:", self.extension)
-				ydl.extract_info(self.youtube_url, download=True)
-				self.dead_url = 0
-				print("")
+			print("Downloaded file extension:", self.extension)
+			with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+				ydl.extract_info(self.youtube_url, download=True)	
+		except youtube_dl.utils.ExtractorError as e:
+			print(f"Error: {str(e)}")
 		except Exception as e:
-			print("An error occurred:", e)
-			self.dead_url = 1
-			self.file_exists = 0
+			print(f"An unexpected error occurred: {str(e)}")
 
 	def upload_obj(self):
+		print("File Exists:"  + str(self.file_exists))
 		if self.file_exists:
 			return
 
@@ -357,19 +358,65 @@ class Video:
 
 	def update_database(self):
 
-		addRow = "INSERT INTO `the-elite`.`the-elite-videos` (game, stage, difficulty, time_in_seconds, regular_time, player, extension, youtube_url, published_date, rankings_url, filename, dead_youtube_url, rankings_id, file_exists) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
 
-		record = (
-			self.game, self.stage, self.difficulty, self.time_in_seconds, self.regular_time, self.player, self.extension,
-			self.youtube_url, self.date_achieved, self.rankings_url, self.filename, self.dead_url, self.rankings_id, self.file_exists
-		)
+		config.my_cursor.execute("SELECT * FROM `the-elite-ltk-videos` WHERE rankings_id = %s", (self.rankings_id,))
+		row = config.my_cursor.fetchone()
 
-		config.my_cursor.execute(addRow, record)
-		config.mydb.commit()  # save
+		if row:
+			print("Row exists. Updating...")
+			# Prepare the update query to update all rows
+			update_query = """
+				UPDATE `the-elite-ltk-videos`
+				SET 
+					game = %s,
+					stage = %s,
+					difficulty = %s,
+					time_in_seconds = %s,
+					regular_time = %s,
+					player = %s,
+					extension = %s,
+					youtube_url = %s,
+					published_date = %s,
+					rankings_url = %s,
+					filename = %s,
+					dead_youtube_url = %s,
+					file_exists = %s
+				WHERE rankings_id = %s  # Update only the row with the specific rankings_id
+			"""
 
-		print("")
-		print("Finished. Added info to database")
-		print("")
+			# Values to be updated (including the rankings_id as the identifier)
+			values = (
+				self.game,
+				self.stage,
+				self.difficulty,
+				self.time_in_seconds,  # time_in_seconds
+				self.regular_time,
+				self.player,
+				self.extension,
+				self.youtube_url,
+				self.date_achieved,  # published_date
+				self.rankings_url,
+				self.filename,
+				self.dead_url,
+				self.file_exists,  # file_exists (assuming 1 means it exists, 0 means it doesn't)
+				self.rankings_id  # Use the rankings_id to target the row
+			)
+
+			config.my_cursor.execute(update_query, values)
+			config.cursor.commit()
+			print(f"{config.my_cursor.rowcount} row(s) updated successfully.")
+		else:
+			print("Row does not exist. Inserting new row...")
+			addRow = "INSERT INTO `the-elite`.`the-elite-ltk-videos` (game, stage, difficulty, time_in_seconds, regular_time, player, extension, youtube_url, published_date, rankings_url, filename, dead_youtube_url, rankings_id, file_exists) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+
+			record = (
+				self.game, self.stage, self.difficulty, self.time_in_seconds, self.regular_time, self.player, self.extension,
+				self.youtube_url, self.date_achieved, self.rankings_url, self.filename, self.dead_url, self.rankings_id, self.file_exists
+			)
+
+			config.my_cursor.execute(addRow, record)
+			config.cursor.commit()
+			print(f"{config.my_cursor.rowcount} row(s) added successfully.")
 
 
 def main():
@@ -377,7 +424,14 @@ def main():
 		for MONTH in range(1, 13):
 			Video(int(sys.argv[1]), MONTH)
 			print("Month: " + str(MONTH))
-	print(str(sys.argc) + " Complete")
+	print(str(sys.argv) + " Complete")
+
+# def main():
+# 	for YEAR in range(1997, 2025):
+# 		for MONTH in range(1, 13):
+# 			print("MONTH: " + str(MONTH) + " YEAR: " + str(YEAR))
+# 			Video(YEAR, MONTH)
+# 	print(str(sys.argv) + " Complete")
 
 if __name__ == "__main__":
 	main()

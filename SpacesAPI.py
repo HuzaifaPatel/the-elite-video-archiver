@@ -198,7 +198,7 @@ def change_file_name():
 def find_duplicates():
     # Dictionary to store items by their key (the 6th element)
     items_by_key = {}
-    
+    keys = []
     # Get your list of objects
     lis = go_through_all_objects()
 
@@ -217,9 +217,10 @@ def find_duplicates():
         if len(items) > 1:
             duplicates_count += len(items)
             for item in items:
-                print(item)
-    
-    print("Total duplicate items (all instances):", duplicates_count)
+                keys.append(item)
+
+    return keys
+    # print("Total duplicate items (all instances):", duplicates_count)
 
 
 def make_all_files_public():
@@ -239,8 +240,8 @@ def make_all_files_public():
 
 def main():
     # make_all_files_public()
-    find_duplicates()
+    print(len(find_duplicates()))
 
-# Example call to main()
+
 if __name__ == "__main__":
     main()
