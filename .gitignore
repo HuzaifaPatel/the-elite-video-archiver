@@ -1,0 +1,7 @@
+config.py
+the-elite-videos/
+__pycache__
+venv/
+convert_to_new_file_format.py
+cookies.txt
+SpacesAPI.py
