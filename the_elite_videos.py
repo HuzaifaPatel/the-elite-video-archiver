@@ -57,7 +57,7 @@ def load_cookies(driver, path=COOKIES_FILE):
 	return True
 
 
-def wait_for_verification(driver, timeout=0):
+def wait_for_verification(driver, timeout=30):
 	"""Wait for either the page to show the real content or for the cookie to appear."""
 	end = time.time() + timeout
 	while time.time() < end:
@@ -72,7 +72,6 @@ def wait_for_verification(driver, timeout=0):
 		# check that the "Checking your browser" text is gone
 		if "Checking your browser" not in page and "Verifying your connection" not in page:
 			return True
-		time.sleep(0.5)
 	return False
 
 BASE_DIR = os.getcwd()
@@ -98,103 +97,105 @@ class Video:
 
 	# GET ALL TIMES FROM www.rankings.the-elite.net/history/year/month
 	def get_rankings_url(self, YEAR, MONTH, interactive_on_fail=True):
-		options = uc.ChromeOptions()
-		options.add_argument("--no-sandbox")
-		options.add_argument("--disable-dev-shm-usage")
-		options.add_argument("--disable-gpu")
-		options.add_argument("--disable-background-networking")
-		options.add_argument("--disable-sync")
-		options.add_argument("--remote-debugging-port=9222")
-		options.add_argument("--window-size=1200,900")
+	    options = uc.ChromeOptions()
+	    options.add_argument("--disable-extensions")
+	    options.add_argument("--disable-infobars")
+	    options.add_argument("--no-sandbox")
+	    options.add_argument("--disable-dev-shm-usage")
+	    options.add_argument("--disable-gpu")
+	    options.add_argument("--disable-background-networking")
+	    options.add_argument("--disable-sync")
+	    options.add_argument("--remote-debugging-port=9222")
+	    options.add_argument("--window-size=1200,900")
 
-		driver = uc.Chrome(options=options)
-		try:
-			url = f"{self.base_url}/history/{YEAR}/{MONTH}"
-			driver.get(url)
+	    # Headless Chrome
+	    options.add_argument("--headless=new")  # modern headless mode
 
-			# If we have saved cookies, load them and refresh
-			if os.path.exists(COOKIES_FILE):
-				try:
-					load_cookies(driver)
-					driver.refresh()
-				except Exception:
-					# loading cookies can fail if domain mismatch; ignore
-					pass
+	    driver = uc.Chrome(options=options)
+	    driver.set_page_load_timeout(300)  # increase timeout
 
-			# Wait for the helpful anchor or for verification to complete
-			try:
-				# First try explicit expected element (fast, reliable if present)
-				WebDriverWait(driver, 0).until(
-					EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='time']"))
-				)
-				# small pause to let page stabilise
-				time.sleep(0.5)
-			except Exception:
-				# fallback to a custom wait that checks cookies / content
-				ok = wait_for_verification(driver, timeout=0)
-				if not ok and interactive_on_fail:
-					print("Site still showing verification page. Opening visible browser for manual solve.")
-					print("Please complete any verification in the browser window. Press Enter here when done.")
-					# Let user manually solve. Don't quit the driver.
-					input("After solving, press Enter to continue...")
-					# after manual solve, give it a moment
-					time.sleep(1)
-					# if manual solve succeeded, save cookies
-					save_cookies(driver)
+	    try:
+	        url = f"{self.base_url}/history/{YEAR}/{MONTH}"
+	        try:
+	            driver.get(url)
+	        except Exception as e:
+	            print(f"Initial page load failed: {e}, retrying...")
+	            driver.get(url)
 
-			html = driver.page_source
-			# parse
-			try:
-				history = BeautifulSoup(html, 'lxml')
-			except Exception as e:
-				print(f"lxml parser failed: {e}. Falling back to html5lib.")
-				history = BeautifulSoup(html, 'html5lib')
+	        # Load cookies if available
+	        if os.path.exists(COOKIES_FILE):
+	            if load_cookies(driver):
+	                driver.refresh()
 
-			for proven_time in history.find_all('a', href=True):
-				if 'time' in proven_time['href']:
-					self.rankings_url = self.base_url + proven_time['href']
-					# print(self.rankings_url)
-					# IMPORTANT: use the same driver/session for has_video to keep cookies
-					if self.has_video_with_driver(self.rankings_url, driver):
-						self.rankings_id = proven_time['href'].split("/")[-1]
-						self.get_time_info(driver)
-						self.make_game()
-						self.make_filename()
-						self.make_folder()
-						# self.debug()
-						self.download_video() 
-						self.upload_obj() 
-						self.update_database()
-						# update DB, etc.
+	        # Wait for page content or verification
+	        try:
+	            WebDriverWait(driver, 10).until(
+	                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='time']"))
+	            )
+	        except Exception:
+	            ok = wait_for_verification(driver, timeout=30)
+	            if not ok and interactive_on_fail:
+	                print("Manual verification required. Solve in browser and press Enter.")
+	                input()
+	                save_cookies(driver)
 
-			# persist cookies for future automated runs (so headless might succeed next time)
-			save_cookies(driver)
+	        html = driver.page_source
+	        history = BeautifulSoup(html, 'lxml')
 
-		finally:
-			driver.quit()
+	        for proven_time in history.find_all('a', href=True):
+	            if 'time' not in proven_time['href']:
+	                continue
+
+	            self.rankings_url = self.base_url + proven_time['href']
+	            if self.has_video_with_driver(self.rankings_url, driver):
+	                print("Video found!")
+	                self.rankings_id = proven_time['href'].split("/")[-1]
+	                self.get_time_info(driver)
+	                self.make_game()
+	                self.make_filename()
+	                self.make_folder()
+	                self.download_video()
+	                self.upload_obj()
+	                self.update_database()
+
+	        # Save cookies for next run
+	        save_cookies(driver)
+	    finally:
+	        driver.quit()
 
 	# Example helper that uses the same driver to fetch the target page so cookies carry over
-	def has_video_with_driver(self, url, driver, timeout=0):
-		driver.get(url)
-		try:
-			WebDriverWait(driver, timeout).until(
-				EC.presence_of_element_located((By.TAG_NAME, "iframe"))
-			)
-		except Exception:
-			# If no iframe, still check source after waiting to allow JS to run
-			time.sleep(1)
-		html = driver.page_source
-		soup = BeautifulSoup(html, "lxml")
-		iframe = soup.find("iframe", src=lambda s: s and "youtube.com" in s)
-		if iframe:
-			embed_url = iframe.get("src")
-			if "youtube.com/embed/" in embed_url:
-				base_url = embed_url.split('?')[0]
-				video_id = base_url.split('/')[-1]
-				self.youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-				# print("YouTube video URL:", self.youtube_url)
-				return True
-		return False
+	def has_video_with_driver(self, url, driver, timeout=15):
+	    """
+	    Check if the given rankings page has a YouTube video embedded.
+	    Sets self.youtube_url if found. Returns True/False.
+	    """
+	    driver.get(url)
+
+	    # Wait for the iframe to appear (or timeout)
+	    try:
+	        iframe = WebDriverWait(driver, timeout).until(
+	            EC.presence_of_element_located(
+	                (By.CSS_SELECTOR, "iframe[src*='youtube.com/embed/']")
+	            )
+	        )
+	        embed_url = iframe.get_attribute("src")
+	    except Exception:
+	        # Fallback: parse page after waiting a bit for JS to render
+	        html = driver.page_source
+	        soup = BeautifulSoup(html, "lxml")
+	        iframe = soup.find("iframe", src=lambda s: s and "youtube.com/embed/" in s)
+	        if iframe:
+	            embed_url = iframe.get("src")
+	        else:
+	            return False
+
+	    # Extract video ID from the embed URL
+	    base_url = embed_url.split('?')[0]  # remove query params
+	    video_id = base_url.split('/')[-1]
+	    self.youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+	    print("YouTube video URL:", self.youtube_url)
+	    return True
+
 
 		
 	def encode_url(self, url):
@@ -242,17 +243,22 @@ class Video:
 			return False
 
 		
-	def get_time_info(self, driver=None):
+	def get_time_info(self, driver=None, retries=3):
 		if driver is None:
-			# fallback to requests if no driver provided
 			html_content = requests.get(self.rankings_url).text
 		else:
-			driver.get(self.rankings_url)
-			# wait for iframe or some page content to load
-			WebDriverWait(driver, 0).until(
-				EC.presence_of_element_located((By.TAG_NAME, "li"))
-			)
-			html_content = driver.page_source
+			for attempt in range(retries):
+				try:
+					driver.get(self.rankings_url)
+					WebDriverWait(driver, 10).until(
+						EC.presence_of_element_located((By.TAG_NAME, "li"))
+					)
+					html_content = driver.page_source
+					break  # success
+				except Exception as e:
+					print(f"Attempt {attempt+1} failed: {e}")
+					if attempt == retries - 1:
+						raise  # give up after last retry
 
 		soup = BeautifulSoup(html_content, 'html5lib')
 
@@ -569,10 +575,9 @@ class Video:
 		print("")
 
 def main():
-	if len(sys.argv) > 1:
+	if len(sys.argv) > 1:  # YEAR and START_DAY
 		for MONTH in range(6, 13):
 			Video(int(sys.argv[1]), MONTH)
-			print("Month: " + str(MONTH))
 	print(str(sys.argv) + " Complete")
 
 # def main():
