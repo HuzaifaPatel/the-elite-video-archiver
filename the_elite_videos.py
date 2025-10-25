@@ -8,6 +8,12 @@
 # 2000 DONE
 # 2001 DONE
 # 2009 DONE
+# 2020
+# 2021
+# 2022 Start from 9 Month
+# 2023 Start from 6 Month
+# 2024 DONE
+# 2025 DONE. It's still 2025, so have to keep doing it till NYE.
 
 import os
 import sys
@@ -242,15 +248,8 @@ class Video:
                 self.make_game()
                 self.make_filename()
                 self.make_folder()
-
-                # skip download/upload if file already exists in bucket
-                if self.key_exists():
-                    self.file_exists = 1
-                else:
-                    self.file_exists = 0
-                    self.download_video()
-                    if not self.file_exists:
-                        self.upload_obj()
+                self.download_video()
+                self.upload_obj()
                 self.update_database()
             except Exception as e:
                 print("Error processing ranking:", e)
@@ -478,12 +477,18 @@ class Video:
             print("Downloaded file extension:", self.extension)
             with youtube_dl.YoutubeDL(ydl_opts) as ydl:
                 ydl.extract_info(self.youtube_url, download=True)
+        except youtube_dl.utils.DownloadError as e:
+            if "HTTP Error 403" in str(e):
+                print(f"HTTP 403 Forbidden for {self.youtube_url}, marking as alive.")
+                self.dead_url = 0
         except youtube_dl.utils.ExtractorError as e:
             print(f"Error: {str(e)}")
             self.dead_url = 1
         except Exception as e:
             print(f"An unexpected error occurred: {str(e)}")
             self.dead_url = 1
+
+        print(self.dead_url)
 
     def upload_obj(self):
         if self.file_exists:
@@ -505,6 +510,7 @@ class Video:
                     object_name,
                     ExtraArgs={"ContentType": "video/mp4", "ACL": "public-read"}
                 )
+                self.file_exists = 1
                 print(f"File '{file_path}' uploaded successfully as '{object_name}'.")
             except Exception as upload_error:
                 print(f"Error uploading file '{file_path}':", upload_error)
@@ -535,9 +541,7 @@ class Video:
                         youtube_url = %s,
                         published_date = %s,
                         rankings_url = %s,
-                        filename = %s,
-                        dead_youtube_url = %s,
-                        file_exists = %s
+                        filename = %s
                     WHERE rankings_id = %s
                 """
                 values = (
@@ -552,8 +556,6 @@ class Video:
                     self.date_achieved,
                     self.rankings_url,
                     self.filename,
-                    self.dead_url,
-                    self.file_exists,
                     self.rankings_id
                 )
                 config.my_cursor.execute(update_query, values)
@@ -594,7 +596,7 @@ def main():
     if len(sys.argv) > 1:
         year = int(sys.argv[1])
         # you previously iterated months 6..12; keep same unless you want all
-        for MONTH in range(6, 13):
+        for MONTH in range(11, 13):
             try:
                 print(f"Processing YEAR {year} MONTH {MONTH}")
                 Video(year, MONTH)
