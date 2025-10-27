@@ -5,3 +5,5 @@ venv/
 convert_to_new_file_format.py
 cookies.txt
 SpacesAPI.py
+playwright_profile
+debug_pages
