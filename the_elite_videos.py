@@ -22,7 +22,7 @@ import json
 import pathlib
 import multiprocessing
 from datetime import datetime
-
+import re
 import requests
 import yt_dlp as youtube_dl
 from bs4 import BeautifulSoup
@@ -62,115 +62,40 @@ def _save_cookies_to_file(cookies):
     except Exception as e:
         print("Failed to save cookies:", e)
 
-# ---------- Playwright fetcher ----------
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
 def fetch_with_playwright(url, timeout_ms=30000, headless=True, wait_for_selector="a[href*='time']"):
-    """
-    Fetch fully-rendered HTML for `url`.
-    - Tries headless chromium first; if verification blocks headless, falls back to visible browser
-      and prompts the user to solve verification manually. Cookies are saved to disk.
-    """
     cookies_from_file = _load_cookies_from_file()
+    html = None
 
     with sync_playwright() as p:
-        # Try headless first
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context()
         if cookies_from_file:
-            try:
-                context.add_cookies(cookies_from_file)
-            except Exception:
-                # ignore cookie loading errors
-                pass
-
+            context.add_cookies(cookies_from_file)
         page = context.new_page()
+        
+        try:
+            page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+        except Exception as e:
+            print(f"Initial navigation failed: {e}")
 
         try:
-            page.goto(url, timeout=timeout_ms)
-        except Exception:
-            # retry once more
-            try:
-                page.goto(url, timeout=timeout_ms)
-            except Exception as e:
-                print(f"Initial navigation failures: {e}")
-
-        # Wait for either the real content selector OR a verification cookie then reload
-        start = time.time()
-        html = None
-        try:
-            while True:
-                try:
-                    if page.query_selector(wait_for_selector):
-                        html = page.content()
-                        break
-                except Exception:
-                    pass
-
-                # Check cookies for verification markers
-                try:
-                    cookies = context.cookies()
-                except Exception:
-                    cookies = []
-
-                # site-specific cookie check; adjust if needed
-                if any(c.get("name", "").lower().startswith("verified") or c.get("name") == "verified-user" for c in cookies):
-                    # reload to allow site to render protected content
-                    try:
-                        page.reload(timeout=timeout_ms)
-                    except Exception:
-                        pass
-                    try:
-                        if page.wait_for_selector(wait_for_selector, timeout=5000):
-                            html = page.content()
-                            break
-                    except PlaywrightTimeoutError:
-                        pass
-
-                elapsed_ms = (time.time() - start) * 1000
-                if elapsed_ms > timeout_ms:
-                    # timed out — return what we have (could be the checking page)
-                    html = page.content()
-                    break
-                time.sleep(0.4)
+            page.wait_for_selector(wait_for_selector, timeout=5000)  # shorter timeout for selector
+            html = page.content()
         except PlaywrightTimeoutError:
+            print(f"Selector {wait_for_selector} not found on page {url}. Continuing anyway.")
             html = page.content()
 
-        # Save cookies to disk for future runs
+        # Save cookies safely
         try:
-            saved_cookies = context.cookies()
-            _save_cookies_to_file(saved_cookies)
+            _save_cookies_to_file(context.cookies())
         except Exception:
             pass
 
         browser.close()
 
-        # If headless failed and returned the verification page, open visible browser for manual solve
-        if headless and html and ("Checking your browser" in html or "Verifying your connection" in html) and not page.query_selector(wait_for_selector):
-            print("Headless run returned verification page. Launching visible browser for manual verification...")
-            browser2 = p.chromium.launch(headless=False)
-            context2 = browser2.new_context()
-            if cookies_from_file:
-                try:
-                    context2.add_cookies(cookies_from_file)
-                except Exception:
-                    pass
-            page2 = context2.new_page()
-            page2.goto(url, timeout=60000)
-            print("Please complete any verification in the opened browser window. After verifying, press Enter here to continue...")
-            input()
-            # Save new cookies and capture content
-            try:
-                saved_cookies2 = context2.cookies()
-                _save_cookies_to_file(saved_cookies2)
-            except Exception:
-                pass
-            try:
-                page2.wait_for_selector(wait_for_selector, timeout=30000)
-            except Exception:
-                pass
-            html = page2.content()
-            browser2.close()
-
-        return html
+    return html
 
 # ---------- Utility helpers ----------
 def encode_url(url):
@@ -214,10 +139,9 @@ class Video:
 
         history = BeautifulSoup(html, "lxml")
 
-        for proven_time in history.find_all("a", href=True):
+
+        for proven_time in history.find_all("a", href=re.compile("time")):
             href = proven_time["href"]
-            if "time" not in href:
-                continue
 
             self.rankings_url = self.base_url + href
 
