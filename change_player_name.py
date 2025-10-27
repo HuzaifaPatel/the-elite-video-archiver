@@ -5,8 +5,8 @@ If a player changes their name on the rankings, we need to change it in the buck
 
 import os
 
-PATH = "/home/huzi/Downloads/Ryan_White"
-NEW_NAME = "Ryan_W."
+PATH = "/home/huzi/Downloads/Jonathan_H."
+NEW_NAME = "Jonathan_Hotinski"
 os.chdir(PATH)
 
 def change_name():
