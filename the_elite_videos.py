@@ -9,7 +9,7 @@
 # 2001 DONE
 # 2009 DONE
 # 2020
-# 2021 DONE
+# 2021 
 # 2022 Start from 9 Month
 # 2023 DONE
 # 2024 DONE
@@ -596,7 +596,7 @@ def main():
     if len(sys.argv) > 1:
         year = int(sys.argv[1])
         # you previously iterated months 6..12; keep same unless you want all
-        for MONTH in range(11, 13):
+        for MONTH in range(1, 13):
             try:
                 print(f"Processing YEAR {year} MONTH {MONTH}")
                 Video(year, MONTH)
